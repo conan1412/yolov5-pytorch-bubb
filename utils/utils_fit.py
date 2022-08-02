@@ -31,7 +31,7 @@ def fit_one_epoch(model_train, model, ema, yolo_loss, loss_history, eval_callbac
             #----------------------#
             #   前向传播
             #----------------------#
-            outputs         = model_train(images)
+            outputs         = model_train(images)  # outputs.shape: [[1, 75, 20, 20], [1, 75, 40, 40], [1, 75, 80, 80]]
 
             loss_value_all  = 0
             #----------------------#

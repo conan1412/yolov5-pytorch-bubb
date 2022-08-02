@@ -42,7 +42,7 @@ class YOLOLoss(nn.Module):
     def BCELoss(self, pred, target):
         epsilon = 1e-7
         pred    = self.clip_by_tensor(pred, epsilon, 1.0 - epsilon)
-        output  = - target * torch.log(pred) - (1.0 - target) * torch.log(1.0 - pred)
+        output  = - target * torch.log(pred) - (1.0 - target) * torch.log(1.0 - pred)  # 交叉熵损失
         return output
         
     def box_giou(self, b1, b2):
@@ -118,8 +118,8 @@ class YOLOLoss(nn.Module):
         #   20, 20
         #--------------------------------#
         bs      = input.size(0)
-        in_h    = input.size(2)
-        in_w    = input.size(3)
+        in_h    = input.size(2)  # 20
+        in_w    = input.size(3)  # 20
         #-----------------------------------------------------------------------#
         #   计算步长
         #   每一个特征点对应原来的图片上多少个像素点
@@ -129,12 +129,12 @@ class YOLOLoss(nn.Module):
         #   如果特征层为80x80的话，一个特征点就对应原来的图片上的8个像素点
         #   stride_h = stride_w = 32、16、8
         #-----------------------------------------------------------------------#
-        stride_h = self.input_shape[0] / in_h
-        stride_w = self.input_shape[1] / in_w
+        stride_h = self.input_shape[0] / in_h  # 32
+        stride_w = self.input_shape[1] / in_w  # 32
         #-------------------------------------------------#
         #   此时获得的scaled_anchors大小是相对于特征层的
         #-------------------------------------------------#
-        scaled_anchors  = [(a_w / stride_w, a_h / stride_h) for a_w, a_h in self.anchors]
+        scaled_anchors  = [(a_w / stride_w, a_h / stride_h) for a_w, a_h in self.anchors]  # scaled_anchors: [(0.3125, 0.40625), (0.5, 0.9375), (1.03125, 0.71875), (0.9375, 1.90625), (1.9375, 1.40625), (1.84375, 3.71875), (3.625, 2.8125), (4.875, 6.1875), (11.65625, 10.1875)]
         #-----------------------------------------------#
         #   输入的input一共有三个，他们的shape分别是
         #   bs, 3 * (5+num_classes), 20, 20 => bs, 3, 5 + num_classes, 20, 20 => batch_size, 3, 20, 20, 5 + num_classes
@@ -143,7 +143,7 @@ class YOLOLoss(nn.Module):
         #   batch_size, 3, 40, 40, 5 + num_classes
         #   batch_size, 3, 80, 80, 5 + num_classes
         #-----------------------------------------------#
-        prediction = input.view(bs, len(self.anchors_mask[l]), self.bbox_attrs, in_h, in_w).permute(0, 1, 3, 4, 2).contiguous()
+        prediction = input.view(bs, len(self.anchors_mask[l]), self.bbox_attrs, in_h, in_w).permute(0, 1, 3, 4, 2).contiguous()  # shape: [1, 75, 20, 20] -> [1, 3, 20, 20, 25]
         
         #-----------------------------------------------#
         #   先验框的中心位置的调整参数
@@ -174,33 +174,33 @@ class YOLOLoss(nn.Module):
         #   如果重合程度过大则忽略，因为这些特征点属于预测比较准确的特征点
         #   作为负样本不合适
         #----------------------------------------------------------------#
-        pred_boxes = self.get_pred_boxes(l, x, y, h, w, targets, scaled_anchors, in_h, in_w)
+        pred_boxes = self.get_pred_boxes(l, x, y, h, w, targets, scaled_anchors, in_h, in_w)  # pred_boxes.shape: [1, 3, 20, 20, 4]
 
         if self.cuda:
             y_true          = y_true.type_as(x)
         
         loss    = 0
-        n       = torch.sum(y_true[..., 4] == 1)
+        n       = torch.sum(y_true[..., 4] == 1)  # n=真实目标数量
         if n != 0:
             #---------------------------------------------------------------#
             #   计算预测结果和真实结果的giou，计算对应有真实框的先验框的giou损失
             #                         loss_cls计算对应有真实框的先验框的分类损失
             #----------------------------------------------------------------#
-            giou        = self.box_giou(pred_boxes, y_true[..., :4]).type_as(x)
+            giou        = self.box_giou(pred_boxes, y_true[..., :4]).type_as(x)  # giou.shape: [1, 3, 20, 20]
             loss_loc    = torch.mean((1 - giou)[y_true[..., 4] == 1])
             loss_cls    = torch.mean(self.BCELoss(pred_cls[y_true[..., 4] == 1], self.smooth_labels(y_true[..., 5:][y_true[..., 4] == 1], self.label_smoothing, self.num_classes)))
-            loss        += loss_loc * self.box_ratio + loss_cls * self.cls_ratio
+            loss        += loss_loc * self.box_ratio + loss_cls * self.cls_ratio  # self.box_ratio: 0.05, self.cls_ratio: 0.5
             #-----------------------------------------------------------#
             #   计算置信度的loss
             #   也就意味着先验框对应的预测框预测的更准确
-            #   它才是用来预测这个物体的。
+            #   它才是用来预测这个物体的。 tobj在有目标的值为giou，其他值为0
             #-----------------------------------------------------------#
-            tobj        = torch.where(y_true[..., 4] == 1, giou.detach().clamp(0), torch.zeros_like(y_true[..., 4]))
+            tobj        = torch.where(y_true[..., 4] == 1, giou.detach().clamp(0), torch.zeros_like(y_true[..., 4]))  # .clamp(0)裁剪最小值为0
         else:
-            tobj        = torch.zeros_like(y_true[..., 4])
-        loss_conf   = torch.mean(self.BCELoss(conf, tobj))
+            tobj        = torch.zeros_like(y_true[..., 4])  # 无目标，tobj全部为0
+        loss_conf   = torch.mean(self.BCELoss(conf, tobj))  # loss_conf是有无目标的损失，使用giou作为真实概率值，conf作为预测概率值，进行交叉熵损失
         
-        loss        += loss_conf * self.balance[l] * self.obj_ratio
+        loss        += loss_conf * self.balance[l] * self.obj_ratio  # self.balance: [0.4, 1.0, 4], self.obj_ratio: 1
         # if n != 0:
         #     print(loss_loc * self.box_ratio, loss_cls * self.cls_ratio, loss_conf * self.balance[l] * self.obj_ratio)
         return loss
@@ -332,25 +332,32 @@ class YOLOLoss(nn.Module):
         #   生成网格，先验框中心，网格左上角
         #-----------------------------------------------------#
         grid_x = torch.linspace(0, in_w - 1, in_w).repeat(in_h, 1).repeat(
-            int(bs * len(self.anchors_mask[l])), 1, 1).view(x.shape).type_as(x)
+            int(bs * len(self.anchors_mask[l])), 1, 1).view(x.shape).type_as(x)  # shape: [1, 3, 20, 20]
         grid_y = torch.linspace(0, in_h - 1, in_h).repeat(in_w, 1).t().repeat(
-            int(bs * len(self.anchors_mask[l])), 1, 1).view(y.shape).type_as(x)
+            int(bs * len(self.anchors_mask[l])), 1, 1).view(y.shape).type_as(x)  # shape: [1, 3, 20, 20]
 
         # 生成先验框的宽高
-        scaled_anchors_l = np.array(scaled_anchors)[self.anchors_mask[l]]
-        anchor_w = torch.Tensor(scaled_anchors_l).index_select(1, torch.LongTensor([0])).type_as(x)
-        anchor_h = torch.Tensor(scaled_anchors_l).index_select(1, torch.LongTensor([1])).type_as(x)
+        scaled_anchors_l = np.array(scaled_anchors)[self.anchors_mask[l]]  # scaled_anchors_l: [[3.625, 2.8125], [4.875, 6.1875], [11.65625, 10.1875]]
+        anchor_w = torch.Tensor(scaled_anchors_l).index_select(1, torch.LongTensor([0])).type_as(x)  # anchor_w: [[ 3.6250],[ 4.8750],[11.6562]]
+        anchor_h = torch.Tensor(scaled_anchors_l).index_select(1, torch.LongTensor([1])).type_as(x)  # anchor_h: [[ 2.8125],[ 6.1875],[10.1875]]
         
-        anchor_w = anchor_w.repeat(bs, 1).repeat(1, 1, in_h * in_w).view(w.shape)
-        anchor_h = anchor_h.repeat(bs, 1).repeat(1, 1, in_h * in_w).view(h.shape)
+        anchor_w = anchor_w.repeat(bs, 1).repeat(1, 1, in_h * in_w).view(w.shape)  # anchor_w.shape: [3, 1] -> [1, 3, 20, 20]
+        anchor_h = anchor_h.repeat(bs, 1).repeat(1, 1, in_h * in_w).view(h.shape)  # anchor_h.shape: [3, 1] -> [1, 3, 20, 20]
         #-------------------------------------------------------#
-        #   计算调整后的先验框中心与宽高
+        #   计算调整后的先验框中心与宽高,为啥要x*2-0.5+grid_x???，因为一个目标对应三个正样本，所以xy的取值范围是[-0.5:1.5]，wh的取值范围是[0:4]
+        #   利用预测结果对先验框进行调整
+        #   首先调整先验框的中心，从先验框中心向右下角偏移
+        #   再调整先验框的宽高。
+        #   x 0 ~ 1 => 0 ~ 2 => -0.5, 1.5 => 负责一定范围的目标的预测
+        #   y 0 ~ 1 => 0 ~ 2 => -0.5, 1.5 => 负责一定范围的目标的预测
+        #   w 0 ~ 1 => 0 ~ 2 => 0 ~ 4 => 先验框的宽高调节范围为0~4倍
+        #   h 0 ~ 1 => 0 ~ 2 => 0 ~ 4 => 先验框的宽高调节范围为0~4倍
         #-------------------------------------------------------#
-        pred_boxes_x    = torch.unsqueeze(x * 2. - 0.5 + grid_x, -1)
+        pred_boxes_x    = torch.unsqueeze(x * 2. - 0.5 + grid_x, -1)  # shape: [1, 3, 20, 20] -> [1, 3, 20, 20, 1]
         pred_boxes_y    = torch.unsqueeze(y * 2. - 0.5 + grid_y, -1)
         pred_boxes_w    = torch.unsqueeze((w * 2) ** 2 * anchor_w, -1)
         pred_boxes_h    = torch.unsqueeze((h * 2) ** 2 * anchor_h, -1)
-        pred_boxes      = torch.cat([pred_boxes_x, pred_boxes_y, pred_boxes_w, pred_boxes_h], dim = -1)
+        pred_boxes      = torch.cat([pred_boxes_x, pred_boxes_y, pred_boxes_w, pred_boxes_h], dim = -1)  # pred_boxes.shape: [1, 3, 20, 20, 4]
         return pred_boxes
 
 def is_parallel(model):

@@ -31,7 +31,7 @@ class YoloBody(nn.Module):
             #   40,40,512
             #   20,20,1024
             #---------------------------------------------------#
-            self.backbone   = CSPDarknet(base_channels, base_depth, phi, pretrained)
+            self.backbone   = CSPDarknet(base_channels, base_depth, phi, pretrained)  # 32, 1, 's', False
         else:
             #---------------------------------------------------#   
             #   如果输入不为cspdarknet，则调整通道数
@@ -75,12 +75,12 @@ class YoloBody(nn.Module):
 
     def forward(self, x):
         #  backbone
-        feat1, feat2, feat3 = self.backbone(x)
+        feat1, feat2, feat3 = self.backbone(x)  # shape: [1, 128, 80, 80], [1, 256, 40, 40], [1, 512, 20, 20]
         if self.backbone_name != "cspdarknet":
             feat1 = self.conv_1x1_feat1(feat1)
             feat2 = self.conv_1x1_feat2(feat2)
             feat3 = self.conv_1x1_feat3(feat3)
-
+        ####   FPN    ####
         # 20, 20, 1024 -> 20, 20, 512
         P5          = self.conv_for_feat3(feat3)
         # 20, 20, 512 -> 40, 40, 512
@@ -98,7 +98,7 @@ class YoloBody(nn.Module):
         P3          = torch.cat([P4_upsample, feat1], 1)
         # 80, 80, 512 -> 80, 80, 256
         P3          = self.conv3_for_upsample2(P3)
-        
+        ####   PAN    ####
         # 80, 80, 256 -> 40, 40, 256
         P3_downsample = self.down_sample1(P3)
         # 40, 40, 256 cat 40, 40, 256 -> 40, 40, 512
@@ -128,5 +128,5 @@ class YoloBody(nn.Module):
         #   y1=(batch_size,75,20,20)
         #---------------------------------------------------#
         out0 = self.yolo_head_P5(P5)
-        return out0, out1, out2
+        return out0, out1, out2  # shape: [1, 75, 20, 20], [1, 75, 40, 40], [1, 75, 80, 80]
 

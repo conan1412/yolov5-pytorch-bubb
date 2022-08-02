@@ -38,6 +38,7 @@ from utils.utils_fit import fit_one_epoch
    如果只是训练了几个Step是不会保存的，Epoch和Step的概念要捋清楚一下。
 '''
 if __name__ == "__main__":
+    os.environ['CUDA_VISIBLE_DEVICES'] = "0"
     #---------------------------------#
     #   Cuda    是否使用Cuda
     #           没有GPU可以设置成False
@@ -131,9 +132,9 @@ if __name__ == "__main__":
     #                       当mosaic=True时，本代码会在special_aug_ratio范围内开启mosaic。
     #                       默认为前70%个epoch，100个世代会开启70个世代。
     #------------------------------------------------------------------#
-    mosaic              = True
+    mosaic              = False
     mosaic_prob         = 0.5
-    mixup               = True
+    mixup               = False
     mixup_prob          = 0.5
     special_aug_ratio   = 0.7
     #------------------------------------------------------------------#
@@ -177,7 +178,7 @@ if __name__ == "__main__":
     #------------------------------------------------------------------#
     Init_Epoch          = 0
     Freeze_Epoch        = 50
-    Freeze_batch_size   = 16
+    Freeze_batch_size   = 1
     #------------------------------------------------------------------#
     #   解冻阶段训练参数
     #   此时模型的主干不被冻结了，特征提取网络会发生改变
@@ -188,7 +189,7 @@ if __name__ == "__main__":
     #   Unfreeze_batch_size     模型在解冻后的batch_size
     #------------------------------------------------------------------#
     UnFreeze_Epoch      = 300
-    Unfreeze_batch_size = 8
+    Unfreeze_batch_size = 1
     #------------------------------------------------------------------#
     #   Freeze_Train    是否进行冻结训练
     #                   默认先冻结主干训练后解冻训练。
@@ -222,7 +223,7 @@ if __name__ == "__main__":
     #------------------------------------------------------------------#
     #   save_period     多少个epoch保存一次权值
     #------------------------------------------------------------------#
-    save_period         = 10
+    save_period         = 1
     #------------------------------------------------------------------#
     #   save_dir        权值与日志文件保存的文件夹
     #------------------------------------------------------------------#
@@ -237,13 +238,13 @@ if __name__ == "__main__":
     #   （二）此处设置评估参数较为保守，目的是加快评估速度。
     #------------------------------------------------------------------#
     eval_flag           = True
-    eval_period         = 10
+    eval_period         = 1
     #------------------------------------------------------------------#
     #   num_workers     用于设置是否使用多线程读取数据
     #                   开启后会加快数据读取速度，但是会占用更多内存
     #                   内存较小的电脑可以设置为2或者0  
     #------------------------------------------------------------------#
-    num_workers         = 4
+    num_workers         = 0
 
     #------------------------------------------------------#
     #   train_annotation_path   训练图片路径和标签
@@ -486,7 +487,7 @@ if __name__ == "__main__":
         else:
             train_sampler   = None
             val_sampler     = None
-            shuffle         = True
+            shuffle         = False
 
         gen             = DataLoader(train_dataset, shuffle = shuffle, batch_size = batch_size, num_workers = num_workers, pin_memory=True,
                                     drop_last=True, collate_fn=yolo_dataset_collate, sampler=train_sampler)

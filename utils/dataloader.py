@@ -379,8 +379,8 @@ class YoloDataset(Dataset):
         return new_image, new_boxes
     
     def get_near_points(self, x, y, i, j):
-        sub_x = x - i
-        sub_y = y - j
+        sub_x = x - i  # sub_x: 0.453125
+        sub_y = y - j  # sub_y: 0.953125
         if sub_x > 0.5 and sub_y > 0.5:
             return [[0, 0], [1, 0], [0, 1]]
         elif sub_x < 0.5 and sub_y > 0.5:
@@ -394,25 +394,27 @@ class YoloDataset(Dataset):
         #-----------------------------------------------------------#
         #   一共有三个特征层数
         #-----------------------------------------------------------#
-        num_layers  = len(self.anchors_mask)
+        num_layers  = len(self.anchors_mask)  # self.anchors_mask: [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
         
-        input_shape = np.array(self.input_shape, dtype='int32')
-        grid_shapes = [input_shape // {0:32, 1:16, 2:8, 3:4}[l] for l in range(num_layers)]
-        y_true      = [np.zeros((len(self.anchors_mask[l]), grid_shapes[l][0], grid_shapes[l][1], self.bbox_attrs), dtype='float32') for l in range(num_layers)]
-        box_best_ratio = [np.zeros((len(self.anchors_mask[l]), grid_shapes[l][0], grid_shapes[l][1]), dtype='float32') for l in range(num_layers)]
+        input_shape = np.array(self.input_shape, dtype='int32')  # input_shape: [640, 640]
+        grid_shapes = [input_shape // {0:32, 1:16, 2:8, 3:4}[l] for l in range(num_layers)]  # grid_shapes: [[20, 20], [40, 40], [80, 80]]
+        y_true      = [np.zeros((len(self.anchors_mask[l]), grid_shapes[l][0], grid_shapes[l][1], self.bbox_attrs),
+                                dtype='float32') for l in range(num_layers)]  # y_true.shape: [(3, 20, 20, 25), (3, 40, 40, 25), (3, 80, 80, 25)]
+        box_best_ratio = [np.zeros((len(self.anchors_mask[l]), grid_shapes[l][0], grid_shapes[l][1]),
+                                   dtype='float32') for l in range(num_layers)]  # box_best_ratio.shape: [(3, 20, 20), (3, 40, 40), (3, 80, 80)]
         
         if len(targets) == 0:
             return y_true
         
-        for l in range(num_layers):
-            in_h, in_w      = grid_shapes[l]
-            anchors         = np.array(self.anchors) / {0:32, 1:16, 2:8, 3:4}[l]
+        for l in range(num_layers):  # num_layers: 3
+            in_h, in_w      = grid_shapes[l]  # in_h: 20, in_w: 20
+            anchors         = np.array(self.anchors) / {0:32, 1:16, 2:8, 3:4}[l]  # 归一化anchors, anchors.shape: (9, 2)
             
             batch_target = np.zeros_like(targets)
             #-------------------------------------------------------#
-            #   计算出正样本在特征层上的中心点
+            #   计算出正样本在特征层上的中心点， targets:[[0.1227, 0.8975, 0.1672, 0.1328, 4.0]], batch_target:[[2.453, 17.95, 3.344, 2.656, 4.0]]
             #-------------------------------------------------------#
-            batch_target[:, [0,2]]  = targets[:, [0,2]] * in_w
+            batch_target[:, [0,2]]  = targets[:, [0,2]] * in_w  # 还原真实坐标
             batch_target[:, [1,3]]  = targets[:, [1,3]] * in_h
             batch_target[:, 4]      = targets[:, 4]
             #-------------------------------------------------------#
@@ -430,18 +432,36 @@ class YoloDataset(Dataset):
             #   max_ratios代表每一个真实框和每一个先验框的宽高的比值的最大值
             #   max_ratios              : num_true_box, 9
             #-------------------------------------------------------#
+            # ratios_of_gt_anchors: [[[64., 49.23076923],
+            #                           [40., 21.33333333],
+            #                           [19.39393939, 27.82608696],
+            #                           [21.33333333, 10.49180328],
+            #                           [10.32258065, 14.22222222],
+            #                           [10.84745763, 5.37815126],
+            #                           [5.51724138, 7.11111111],
+            #                           [4.1025641, 3.23232323],
+            #                           [1.71581769, 1.96319018]]] , shape: (1, 9, 2)
             ratios_of_gt_anchors = np.expand_dims(batch_target[:, 2:4], 1) / np.expand_dims(anchors, 0)
+            # ratios_of_anchors_gt: [[[0.015625, 0.0203125],
+            #                       [0.025, 0.046875],
+            #                       [0.0515625, 0.0359375],
+            #                       [0.046875, 0.0953125],
+            #                       [0.096875, 0.0703125],
+            #                       [0.0921875, 0.1859375],
+            #                       [0.18125, 0.140625],
+            #                       [0.24375, 0.309375],
+            #                       [0.5828125, 0.509375]]] , shape: (1, 9, 2)
             ratios_of_anchors_gt = np.expand_dims(anchors, 0) / np.expand_dims(batch_target[:, 2:4], 1)
-            ratios               = np.concatenate([ratios_of_gt_anchors, ratios_of_anchors_gt], axis = -1)
-            max_ratios           = np.max(ratios, axis = -1)
+            ratios               = np.concatenate([ratios_of_gt_anchors, ratios_of_anchors_gt], axis = -1)  # ratios.shape: (1, 9, 4)
+            max_ratios           = np.max(ratios, axis = -1)  # max_ratios.shape: (1, 9), max_ratios: [[10.7, 6.688, 3.695, 3.566, 1.889, 1.813, 1.084, 2.33, 3.836]]
             
             for t, ratio in enumerate(max_ratios):
                 #-------------------------------------------------------#
-                #   ratio : 9
+                #   ratio : 9, self.threshold是啥意思？？？, tx/anchor_x && anchor_x/tx && ty/anchor_y && anchory/ty < 4, 即 1/16 < tx*ty/(anchor_x * anchor_y) < 16
                 #-------------------------------------------------------#
-                over_threshold = ratio < self.threshold
+                over_threshold = ratio < self.threshold  # self.threshold: 4, over_threshold: [False, False,  True,  True,  True,  True,  True,  True,  True]
                 over_threshold[np.argmin(ratio)] = True
-                for k, mask in enumerate(self.anchors_mask[l]):
+                for k, mask in enumerate(self.anchors_mask[l]):  # k: 0, k只能是[0,1,2], mask: 6 , self.anchors_mask: [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
                     if not over_threshold[mask]:
                         continue
                     #----------------------------------------#
@@ -449,15 +469,15 @@ class YoloDataset(Dataset):
                     #   x  1.25     => 1
                     #   y  3.75     => 3
                     #----------------------------------------#
-                    i = int(np.floor(batch_target[t, 0]))
-                    j = int(np.floor(batch_target[t, 1]))
-                    
-                    offsets = self.get_near_points(batch_target[t, 0], batch_target[t, 1], i, j)
+                    i = int(np.floor(batch_target[t, 0]))  # np.floor：向下取整, i: 2
+                    j = int(np.floor(batch_target[t, 1]))  # j: 17
+                    # offsets得到离的最近的三个坐标偏移点，记为正样本，并把对应的真实坐标宽高类别信息分别存入这三个位置，即一个真实目标对应三个临近点正样本
+                    offsets = self.get_near_points(batch_target[t, 0], batch_target[t, 1], i, j)  # offsets: [[0, 0], [-1, 0], [0, 1]]
                     for offset in offsets:
-                        local_i = i + offset[0]
-                        local_j = j + offset[1]
+                        local_i = i + offset[0]  #  local_i: 2
+                        local_j = j + offset[1]  #  local_j: 17
 
-                        if local_i >= in_w or local_i < 0 or local_j >= in_h or local_j < 0:
+                        if local_i >= in_w or local_i < 0 or local_j >= in_h or local_j < 0:  # 判断是否越界
                             continue
 
                         if box_best_ratio[l][k, local_j, local_i] != 0:
@@ -467,23 +487,23 @@ class YoloDataset(Dataset):
                                 continue
                             
                         #----------------------------------------#
-                        #   取出真实框的种类
+                        #   取出真实框的种类id
                         #----------------------------------------#
                         c = int(batch_target[t, 4])
 
                         #----------------------------------------#
-                        #   tx、ty代表中心调整参数的真实值
+                        #   tx、ty代表中心调整参数的真实值, y_true记录真实坐标点, batch_target:[2.453125, 17.953125, 3.34375, 2.65625, 4.0]
                         #----------------------------------------#
-                        y_true[l][k, local_j, local_i, 0] = batch_target[t, 0]
+                        y_true[l][k, local_j, local_i, 0] = batch_target[t, 0]  # y_true[0][0, 17, 2, 0] = batch_target[0, 0] =  2.453125
                         y_true[l][k, local_j, local_i, 1] = batch_target[t, 1]
                         y_true[l][k, local_j, local_i, 2] = batch_target[t, 2]
                         y_true[l][k, local_j, local_i, 3] = batch_target[t, 3]
                         y_true[l][k, local_j, local_i, 4] = 1
                         y_true[l][k, local_j, local_i, c + 5] = 1
                         #----------------------------------------#
-                        #   获得当前先验框最好的比例
+                        #   获得当前先验框最好的比例, ratio:[10.7, 6.688, 3.695, 3.566, 1.889, 1.813, 1.084, 2.33, 3.836]
                         #----------------------------------------#
-                        box_best_ratio[l][k, local_j, local_i] = ratio[mask]
+                        box_best_ratio[l][k, local_j, local_i] = ratio[mask]  # ratio[6]: 1.084
                         
         return y_true
     

@@ -15,7 +15,7 @@ def autopad(k, p=None):
 class Focus(nn.Module):
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):  # ch_in, ch_out, kernel, stride, padding, groups
         super(Focus, self).__init__()
-        self.conv = Conv(c1 * 4, c2, k, s, p, g, act)
+        self.conv = Conv(c1 * 4, c2, k, s, p, g, act)  # 12, 32, 3, 1, None, 1, True
 
     def forward(self, x):
         # 320, 320, 12 => 320, 320, 64
@@ -23,10 +23,10 @@ class Focus(nn.Module):
             # 640, 640, 3 => 320, 320, 12
             torch.cat(
                 [
-                    x[..., ::2, ::2], 
-                    x[..., 1::2, ::2], 
-                    x[..., ::2, 1::2], 
-                    x[..., 1::2, 1::2]
+                    x[..., ::2, ::2],   # 行按奇数列切片，列按奇数列切片
+                    x[..., 1::2, ::2],   # 行按偶数列切片，列按奇数列切片
+                    x[..., ::2, 1::2],   # 行按奇数列切片，列按偶数列切片
+                    x[..., 1::2, 1::2]  # 行按偶数列切片，列按偶数列切片
                 ], 1
             )
         )
@@ -85,8 +85,8 @@ class SPP(nn.Module):
         self.m = nn.ModuleList([nn.MaxPool2d(kernel_size=x, stride=1, padding=x // 2) for x in k])
 
     def forward(self, x):
-        x = self.cv1(x)
-        return self.cv2(torch.cat([x] + [m(x) for m in self.m], 1))
+        x = self.cv1(x)  # [1, 512, 20, 20] -> [1, 256, 20, 20]
+        return self.cv2(torch.cat([x] + [m(x) for m in self.m], 1))  # [x] + [m(x)].shape: [[1, 256, 20, 20], [1, 256, 20, 20], [1, 256, 20, 20], [1, 256, 20, 20]]
         
 class CSPDarknet(nn.Module):
     def __init__(self, base_channels, base_depth, phi, pretrained):
@@ -157,21 +157,21 @@ class CSPDarknet(nn.Module):
             print("Load weights from ", url.split('/')[-1])
             
     def forward(self, x):
-        x = self.stem(x)
-        x = self.dark2(x)
+        x = self.stem(x)  # 640, 640, 3 -> 320, 320, 12 -> 320, 320, 64
+        x = self.dark2(x)  # 320, 320, 64 -> 160, 160, 128 -> 160, 160, 128
         #-----------------------------------------------#
         #   dark3的输出为80, 80, 256，是一个有效特征层
         #-----------------------------------------------#
-        x = self.dark3(x)
+        x = self.dark3(x)  # 160, 160, 128 -> 80, 80, 256 -> 80, 80, 256
         feat1 = x
         #-----------------------------------------------#
         #   dark4的输出为40, 40, 512，是一个有效特征层
         #-----------------------------------------------#
-        x = self.dark4(x)
+        x = self.dark4(x)  # 80, 80, 256 -> 40, 40, 512 -> 40, 40, 512
         feat2 = x
         #-----------------------------------------------#
         #   dark5的输出为20, 20, 1024，是一个有效特征层
         #-----------------------------------------------#
-        x = self.dark5(x)
+        x = self.dark5(x)  # 40, 40, 512 -> 20, 20, 1024 -> 20, 20, 1024 -> 20, 20, 1024
         feat3 = x
         return feat1, feat2, feat3
